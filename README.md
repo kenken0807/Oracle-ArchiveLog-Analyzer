@@ -26,7 +26,7 @@ $ perl Oracle-ArchiveLog-Analyzer.pl
   --xid [transaction id] only show XID
   --in_rollback    include rollback.default is to show only commit transacitions.
 
-  Connect Options[default point-ora-bk-db01 ]:
+  Connect Options:
   --host hostname
   --port port
   --sid  sid
