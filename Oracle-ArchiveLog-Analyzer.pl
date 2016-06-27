@@ -5,14 +5,16 @@ use DBI;
 use Data::Dumper;
 use Getopt::Long;
 
-my ($orahost,$oraport,$orasid,$orauser,$orapass,$checkuser)=("localhost","1521","orcl","system","","");
-my ($startpos,$stoppos,$startdate,$stopdate,$select,$table);
+# how to conut DML tables
+#
+my ($orahost,$oraport,$orasid,$orauser,$orapass,$checkuser,$in_rollback,$in_xid)=("","1521","","system","","",0,"");
+my ($startpos,$stoppos,$startdate,$stopdate,$select,$table,$debug);
 GetOptions('start-position=s'=> \$startpos,'stop-position=s'=> \$stoppos,'start-datetime=s'=> \$startdate,'stop-datetime=s'=> \$stopdate,'select'=>\$select
-         , 'host=s'=> \$orahost,'port=s'=> \$oraport,'sid=s'=> \$orasid,'user=s'=> \$orauser,'password=s'=> \$orapass,'checkuser=s'=> \$checkuser,'table=s'=> \$table);
+         , 'host=s'=> \$orahost,'port=s'=> \$oraport,'sid=s'=> \$orasid,'user=s'=> \$orauser,'password=s'=> \$orapass,'checkuser=s'=> \$checkuser,'table=s'=> \$table,'debug'=>\$debug,'in_rollback'=>\$in_rollback,'xid=s'=> \$in_xid);
 
 
 #check options
-if(!$orahost || ! $oraport || ! $orasid || ! $orauser || ! $orapass || ! $checkuser)
+if(!$orahost || ! $oraport || ! $orasid || ! $orauser || ! $orapass )
 {
   &Help();
   exit;
@@ -42,15 +44,17 @@ sub Help {
   --start-datetime ['YYYY/MM/DD HH24:MI:SS'] Start reading REDO log at first event having a datetime equal. (START_TIMESTAMP  >= 'YYYY/MM/DD HH24:MI:SS')
   --stop-datetime  ['YYYY/MM/DD HH24:MI:SS'] Stop reading REDO log at first event having a datetime equal.  (COMMIT_TIMESTAMP <= 'YYYY/MM/DD HH24:MI:SS')
   --select Show EXPLAIN SELECT STATEMENTS
-  --table [TABLENAME] To extract transactions the table has been used (ex."'USER_MASTER','CODE_MASTER'")
+  --table [TABLENAME] To extract transactions the table has been used (ex."'USERS_TABLE','TEST_TABLE'")
+  --xid [transaction id] only show XID
+  --in_rollback    include rollback.default is to show only commit transacitions.
 
-  Connect Options:
-  --host hostname [default localhost]
-  --port port [default 1521]
-  --sid  sid [default orcl]
-  --user user must be 'system' [default system]
-  --pass password 
-  --checkuser FORMAT is "'username','username'...." (ex. --checkuser "'ORCLUSER','ORA'")
+  Connect Options[default point-ora-bk-db01 ]:
+  --host hostname
+  --port port
+  --sid  sid
+  --user user must be 'system'
+  --pass password
+  --checkuser FORMAT is "'username','username'...." (ex. --checkuser "'ORCL','ORCLUSER'")
   
   Detail:
   Set log-files(archivelog or online redolog) at Current Dir or Fullpath
@@ -59,20 +63,24 @@ EOS
 }
 
 sub Main {
+  #GET SCN
+  my $SCN;
   #READ REDO
   exit if(&Check_REDO());
 
+  my $commit= $in_rollback ? "" : " + SYS.DBMS_LOGMNR.COMMITTED_DATA_ONLY" ;
   #Start Analyze REDO
-  $ORADBH->do("begin SYS.DBMS_LOGMNR.START_LOGMNR( OPTIONS => SYS.DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG + SYS.DBMS_LOGMNR.COMMITTED_DATA_ONLY + SYS.DBMS_LOGMNR.NO_ROWID_IN_STMT);  end;");
-#print "exec SYS.DBMS_LOGMNR.START_LOGMNR( OPTIONS => SYS.DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG + SYS.DBMS_LOGMNR.COMMITTED_DATA_ONLY + SYS.DBMS_LOGMNR.NO_ROWID_IN_STMT);\n";
-
+  $ORADBH->do("begin SYS.DBMS_LOGMNR.START_LOGMNR( OPTIONS => SYS.DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG + SYS.DBMS_LOGMNR.NO_ROWID_IN_STMT $commit) ;  end;");
+  print "exec SYS.DBMS_LOGMNR.START_LOGMNR( OPTIONS => SYS.DBMS_LOGMNR.DICT_FROM_ONLINE_CATALOG  + SYS.DBMS_LOGMNR.NO_ROWID_IN_STMT $commit);\n" if($debug);
   #FORMAT SQL
   my $addsql;
+  my $chackusers= $checkuser ? " AND  USERNAME in ($checkuser)  " : "";
   $addsql=$addsql." AND START_SCN >= $startpos " if($startpos);
   $addsql=$addsql." AND COMMIT_SCN <= $stoppos " if($stoppos);
   $addsql=$addsql." AND START_TIMESTAMP  >= '$startdate' " if($startdate);
   $addsql=$addsql." AND COMMIT_TIMESTAMP <= '$stopdate' " if($stopdate);
   $addsql=$addsql." AND TABLE_NAME in ($table) " if($table);
+  $addsql=$addsql." AND xid='$in_xid' " if($in_xid);
   my $getsql=qq{
   SELECT 
     *
@@ -89,34 +97,69 @@ sub Main {
       SQL_REDO,
       OPERATION_CODE,
       MIN(OPERATION_CODE) OVER (PARTITION BY RAWTOHEX(xid) ) as OPE_CODE_MIN,
-      TABLE_NAME
+      TABLE_NAME,
+      TIMESTAMP,
+      MAX(SESSION_INFO) OVER  (PARTITION BY RAWTOHEX(xid) ) as SESSION_INFO
     FROM V\$LOGMNR_CONTENTS 
     WHERE 
-      USERNAME in ($checkuser)
-      AND (SEG_OWNER <> 'SYS' or SEG_OWNER is null)
+      (SEG_OWNER <> 'SYS' or SEG_OWNER is null)
       AND (INFO not like '%INTERNAL%' or INFO is null)
       AND OPERATION_CODE in (1,2,3,5,6,7,36)
+      $chackusers
     ) 
   WHERE
     OPE_CODE_MIN <> 6 
   AND (OPE_CODE_MIN <> 5 or OPERATION_CODE = 5) $addsql
   ORDER BY  COMMIT_SCN,xid,SEQUENCE#};
 
-#print "$getsql\n";
+$getsql=qq{
+  SELECT
+    SCN,START_SCN,COMMIT_SCN,xid,SEQUENCE#,START_TIMESTAMP,COMMIT_TIMESTAMP,SQL_REDO,OPERATION_CODE,OPE_CODE_MIN,TABLE_NAME,TIMESTAMP,SESSION_INFO
+  FROM
+    (
+    SELECT
+      SCN,
+      MAX(SCN) OVER (PARTITION BY RAWTOHEX(xid)) as MAX_SCN,
+      MIN(START_SCN) OVER (PARTITION BY RAWTOHEX(xid)) as START_SCN,
+      MAX(COMMIT_SCN) OVER (PARTITION BY RAWTOHEX(xid)) as COMMIT_SCN,
+      RAWTOHEX(xid) as xid,
+      SEQUENCE#,
+      MIN(START_TIMESTAMP) OVER (PARTITION BY RAWTOHEX(xid)) as START_TIMESTAMP,
+      MAX(COMMIT_TIMESTAMP) OVER (PARTITION BY RAWTOHEX(xid)) as COMMIT_TIMESTAMP,
+      SQL_REDO,
+      OPERATION_CODE,
+      MIN(OPERATION_CODE) OVER (PARTITION BY RAWTOHEX(xid) ) as OPE_CODE_MIN,
+      TABLE_NAME,
+      TIMESTAMP,
+      MAX(SESSION_INFO) OVER  (PARTITION BY RAWTOHEX(xid) ) as SESSION_INFO
+    FROM V\$LOGMNR_CONTENTS
+    WHERE
+      (SEG_OWNER <> 'SYS' or SEG_OWNER is null)
+      AND (INFO not like '%INTERNAL%' or INFO is null)
+      AND OPERATION_CODE in (1,2,3,5,6,7,36)
+      $chackusers
+    )
+  WHERE
+    OPE_CODE_MIN <> 6
+  AND (OPE_CODE_MIN <> 5 or OPERATION_CODE = 5) $addsql
+  ORDER BY  MAX_SCN,xid,SEQUENCE#} if($in_rollback);
+
+
+  print "$getsql\n" if($debug);
   my ($vBaseXid,@vSelectAry);
   my $sth=$ORADBH->prepare($getsql) or die DBI->errstr;
   $sth->execute()  or die DBI->errstr;
-  while ( my ($vScn,$vStart,$vCommit,$vXid,$vSeq,$vTime,$vCtime,$vSql,$vOpeCode,$vOpemin)= $sth->fetchrow)
+  while ( my ($vScn,$vStart,$vCommit,$vXid,$vSeq,$vTime,$vCtime,$vSql,$vOpeCode,$vOpemin,$vTname,$vTimestamp,$vSessInfo)= $sth->fetchrow)
   {
     #transaction changed
     if($vBaseXid eq $vXid)
     {
-      print "$vSql\n";
+      print "$vTimestamp :  $vSql\n";
     }
     else
     {
       @vSelectAry=PrintSelect(@vSelectAry) if(@vSelectAry && $select);
-      print MakeHeader($vTime,$vCtime,$vStart,$vCommit,$vXid,$vSql);
+      print MakeHeader($vTime,$vCtime,$vStart,$vCommit,$vXid,$vSql,$vTimestamp,$vSessInfo);
       $vBaseXid=$vXid;
     }
     #report select
@@ -129,14 +172,15 @@ sub Main {
 
 ####MakeHeader
 sub MakeHeader {
-  my ($vTime,$vCtime,$vStart,$vCommit,$vXid,$vSql)=(shift,shift,shift,shift,shift,shift);
+  my ($vTime,$vCtime,$vStart,$vCommit,$vXid,$vSql,$vTimestamp,$vSessInfo)=(shift,shift,shift,shift,shift,shift,shift,shift);
   my $header=<<"EOS";
 
 
 -- START_TIME: $vTime    COMMIT_TIME: $vCtime
 -- START_SCN: $vStart      COMMIT_SCN: $vCommit
 -- TRANSACTION ID: $vXid
-$vSql 
+-- SESSION INFO: $vSessInfo
+$vTimestamp : $vSql 
 EOS
   return $header;
 }
@@ -239,7 +283,7 @@ sub Check_REDO{
      $log="$pwd/$log" if($log !~/^\//);
     my $ops=$new ? "SYS.DBMS_LOGMNR.ADDFILE" : "SYS.DBMS_LOGMNR.NEW";
     $ORADBH->do("begin SYS.DBMS_LOGMNR.ADD_LOGFILE( LOGFILENAME => '$log', OPTIONS => $ops);  end;") or die DBI->errstr;
-#print "begin SYS.DBMS_LOGMNR.ADD_LOGFILE( LOGFILENAME => '$log', OPTIONS => $ops);  end;";
+    print "exec SYS.DBMS_LOGMNR.ADD_LOGFILE( LOGFILENAME => '$log', OPTIONS => $ops);\n" if($debug);
     $new=1;
   }
 }
