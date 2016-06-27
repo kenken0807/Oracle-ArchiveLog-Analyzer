@@ -1,6 +1,6 @@
 # Oracle-ArchiveLog-Analyzer
 To display modifications to Oracle database contents(DML,DDL) as TEXT FORMAT in the order of Transactions from Online-Redolog or ArchiveLog using LogMiner .  
-Oracle database must be enabled MIN SUPPLEMENTAL LOGGING   
+Oracle database MUST be enabled MIN SUPPLEMENTAL LOGGING   
 
 # INSTALL
 
@@ -22,15 +22,17 @@ $ perl Oracle-ArchiveLog-Analyzer.pl
   --start-datetime ['YYYY/MM/DD HH24:MI:SS'] Start reading REDO log at first event having a datetime equal. (START_TIMESTAMP  >= 'YYYY/MM/DD HH24:MI:SS')
   --stop-datetime  ['YYYY/MM/DD HH24:MI:SS'] Stop reading REDO log at first event having a datetime equal.  (COMMIT_TIMESTAMP <= 'YYYY/MM/DD HH24:MI:SS')
   --select Show EXPLAIN SELECT STATEMENTS
-  --table [TABLENAME] To extract transactions the table has been used (ex."'USER_MASTER','CODE_MASTER'")
+  --table [TABLENAME] To extract transactions the table has been used (ex."'USERS_TABLE','TEST_TABLE'")
+  --xid [transaction id] only show XID
+  --in_rollback    include rollback.default is to show only commit transacitions.
 
-  Connect Options:
-  --host hostname [default localhost]
-  --port port [default 1521]
-  --sid  sid [default orcl]
-  --user user must be 'system' [default system]
+  Connect Options[default point-ora-bk-db01 ]:
+  --host hostname
+  --port port
+  --sid  sid
+  --user user must be 'system'
   --pass password
-  --checkuser FORMAT is "'username','username'...." (ex. --checkuser "'ORCLUSER','ORA'")
+  --checkuser FORMAT is "'username','username'...." (ex. --checkuser "'ORCL','ORCLUSER'")
 
   Detail:
   Set log-files(archivelog or online redolog) at Current Dir or Fullpath
