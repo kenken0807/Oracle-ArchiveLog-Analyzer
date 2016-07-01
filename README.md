@@ -101,3 +101,5 @@ commit;
 -- EXPLAIN SELECT:
 -- select count(*) from "ORAUSER"."TEST" where "ID" = '999' ;
 ```
+## License
+MIT
