@@ -77,8 +77,8 @@ sub Main {
   my $chackusers= $checkuser ? " AND  USERNAME in ($checkuser)  " : "";
   $addsql=$addsql." AND START_SCN >= $startpos " if($startpos);
   $addsql=$addsql." AND COMMIT_SCN <= $stoppos " if($stoppos);
-  $addsql=$addsql." AND START_TIMESTAMP  >= '$startdate' " if($startdate);
-  $addsql=$addsql." AND COMMIT_TIMESTAMP <= '$stopdate' " if($stopdate);
+  $addsql=$addsql." AND START_TIMESTAMP  >= TO_DATE('$startdate', 'yyyy/mm/dd hh24:mi:ss') " if($startdate);
+  $addsql=$addsql." AND COMMIT_TIMESTAMP <= TO_DATE('$stopdate', 'yyyy/mm/dd hh24:mi:ss') " if($stopdate);
   $addsql=$addsql." AND TABLE_NAME in ($table) " if($table);
   $addsql=$addsql." AND xid='$in_xid' " if($in_xid);
   my $getsql=qq{
