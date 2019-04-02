@@ -39,7 +39,7 @@ $ perl Oracle-ArchiveLog-Analyzer.pl
 ```
 
 ```
-$ perl Oracle-ArchiveLog-Analyzer.pl  --sid orcl --pass xxxx --checkuser "'ORAUSER'" --start-datetime '2016/02/18 14:41:27' --stop-datetime '2016/02/18 15:05:00'  /opt/app/oracle/online-redo/redo02.log
+$ perl Oracle-ArchiveLog-Analyzer.pl  --sid orcl --host 127.0.0.1 --pass xxxx --checkuser "'ORAUSER'" --start-datetime '2016/02/18 14:41:27' --stop-datetime '2016/02/18 15:05:00'  /opt/app/oracle/online-redo/redo02.log
 
 -- START_TIME: 2016/02/18 14:41:27    COMMIT_TIME: 2016/02/18 14:41:42
 -- START_SCN: 47902287496      COMMIT_SCN: 47902287503
@@ -71,7 +71,7 @@ truncate table TEST;
 
 Use --select to show SELECT statement.
 ```
-$ perl Oracle-ArchiveLog-Analyzer.pl  --sid orcl --pass xxxx --checkuser "'ORAUSER'" --start-datetime '2016/02/18 14:41:27' --stop-datetime '2016/02/18 15:04:53'  /opt/app/oracle/online-redo/redo02.log --select
+$ perl Oracle-ArchiveLog-Analyzer.pl  --sid orcl --host 127.0.0.1 --pass xxxx --checkuser "'ORAUSER'" --start-datetime '2016/02/18 14:41:27' --stop-datetime '2016/02/18 15:04:53'  /opt/app/oracle/online-redo/redo02.log --select
 
 
 -- START_TIME: 2016/02/18 14:41:27    COMMIT_TIME: 2016/02/18 14:41:42
